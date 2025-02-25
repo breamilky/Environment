@@ -19,7 +19,7 @@ print("packages loaded successfully")
 
 print("Loading data...")
 # Read NDR, Geocoded and DOE data
-SA <- read_csv("Data/SA_Data_all.csv")
+SA <- read_csv("Data/SA_Data_all.csv") # Replace by NDR
 Geocoded_Station_State <- read_csv("Data/Geocoded_Station_State.csv")
 dt <- read_csv("Data/data_wind_com.csv")
 
