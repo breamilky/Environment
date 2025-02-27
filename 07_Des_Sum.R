@@ -6,6 +6,58 @@ library(stringr)
 library(tidyr)
 library(lubridate)
 
+print("Loading data...")
+merged_daily <- read.csv('Data/Mid_process_data/merged_death_data_from_script_01.csv', header = T)
+print("Data loaded successfully!")
+
+merged_daily <- merged_daily %>%
+  mutate(
+    NOAVG_clean = ifelse(NOAVG < 0, NA, NOAVG),
+    NOXAVG_clean = ifelse(NOXAVG < 0, NA, NOXAVG)
+  )
+merged_daily <- merged_daily %>%
+  mutate(
+    SO2_ugm3 = (SO2AVG * 64.066 * 1000) / (0.08205 * (273.15 + AmbientTemperatureAVG)),
+    NO2_ugm3 = (NO2AVG * 46.0055 * 1000) / (0.08205 * (273.15 + AmbientTemperatureAVG)),
+    NO_ugm3 = (NOAVG_clean * 30.01 * 1000) / (0.08205 * (273.15 + AmbientTemperatureAVG)),
+    NOX_ugm3 = (NOXAVG_clean * 46.0055 * 1000) / (0.08205 * (273.15 + AmbientTemperatureAVG)), # using NO2 MW as reference
+    O3_ugm3 = (O3AVG * 48 * 1000) / (0.08205 * (273.15 + AmbientTemperatureAVG)),
+    CO_ugm3 = (COAVG * 28.01 * 1000) / (0.08205 * (273.15 + AmbientTemperatureAVG))
+  )
+
+merged_daily_pm10 <- merged_daily %>%
+  drop_na(PM10AVG, total_frp, FRP_u_wind, FRP_v_wind, RELATIVEHUMIDITYAVG, AmbientTemperatureAVG, year, month)
+
+merged_daily_pm2.5 <- merged_daily %>%
+  drop_na(PM2.5AVG, total_frp, FRP_u_wind, FRP_v_wind, RELATIVEHUMIDITYAVG, AmbientTemperatureAVG, year, month)
+
+merged_daily_o3 <- merged_daily %>%
+  drop_na(O3_ugm3, total_frp, FRP_u_wind, FRP_v_wind, RELATIVEHUMIDITYAVG, AmbientTemperatureAVG, year, month)
+
+merged_daily_co <- merged_daily %>%
+  drop_na(CO_ugm3, total_frp, FRP_u_wind, FRP_v_wind, RELATIVEHUMIDITYAVG, AmbientTemperatureAVG, year, month)
+
+merged_daily_no <- merged_daily %>%
+  drop_na(NO_ugm3, total_frp, FRP_u_wind, FRP_v_wind, RELATIVEHUMIDITYAVG, AmbientTemperatureAVG, year, month)
+
+merged_daily_no2 <- merged_daily %>%
+  drop_na(NO2_ugm3, total_frp, FRP_u_wind, FRP_v_wind, RELATIVEHUMIDITYAVG, AmbientTemperatureAVG, year, month)
+
+merged_daily_nox <- merged_daily %>%
+  drop_na(NOX_ugm3, total_frp, FRP_u_wind, FRP_v_wind, RELATIVEHUMIDITYAVG, AmbientTemperatureAVG, year, month)
+
+merged_daily_so2 <- merged_daily %>%
+  drop_na(SO2_ugm3, total_frp, FRP_u_wind, FRP_v_wind, RELATIVEHUMIDITYAVG, AmbientTemperatureAVG, year, month)
+
+pollutants <- c("PM10AVG", 
+                "PM2.5AVG", 
+                "O3_ugm3", 
+                "CO_ugm3", 
+                "NO_ugm3", 
+                "NO2_ugm3", 
+                "NOX_ugm3", 
+                "SO2_ugm3")
+
 # Create output directory if it doesn't exist
 if (!dir.exists("Output")) {
   dir.create("Output")
