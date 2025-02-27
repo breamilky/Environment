@@ -517,3 +517,449 @@ tryCatch({
   cat("Error in descriptive analysis:", conditionMessage(e), "\n")
   print(traceback())
 })
+
+
+# 5. Enhanced Regional analysis
+regional_summary <- NULL
+if (any(c("LOCATION", "LOCATION_clean") %in% names(data))) {
+  location_var <- ifelse("LOCATION_clean" %in% names(data), "LOCATION_clean", "LOCATION")
+  
+  # Basic region count and proportion
+  region_counts <- data %>%
+    group_by(across(all_of(location_var))) %>%
+    summarize(n_observations = n(),
+              pct_observations = 100 * n() / nrow(data),
+              .groups = "drop") %>%
+    arrange(desc(n_observations))
+  
+  # Calculate pollutant means, medians, and SDs by region
+  if (length(available_pollutants) > 0) {
+    regional_pollutants <- data %>%
+      group_by(across(all_of(location_var))) %>%
+      summarize(across(all_of(available_pollutants),
+                       list(
+                         mean = ~mean(.x, na.rm = TRUE),
+                         median = ~median(.x, na.rm = TRUE),
+                         sd = ~sd(.x, na.rm = TRUE)
+                       )),
+                n = n(),
+                .groups = "drop")
+    
+    # Create a more readable format of regional pollutants
+    regional_pollutants_tidy <- regional_pollutants %>%
+      pivot_longer(cols = -c(all_of(location_var), n),
+                   names_to = "metric", 
+                   values_to = "value") %>%
+      separate(metric, into = c("pollutant", "statistic"), sep = "_(?=[^_]+$)") %>%
+      pivot_wider(names_from = "statistic", 
+                  values_from = "value") %>%
+      mutate(mean_sd = sprintf("%.2f (%.2f)", mean, sd)) %>%
+      select(all_of(location_var), pollutant, n, mean, median, sd, mean_sd)
+  }
+  
+  # Calculate outcome sums and rates by region
+  if (length(available_outcomes) > 0) {
+    regional_outcomes <- data %>%
+      group_by(across(all_of(location_var))) %>%
+      summarize(across(all_of(available_outcomes),
+                       list(
+                         total = ~sum(.x, na.rm = TRUE),
+                         mean = ~mean(.x, na.rm = TRUE),
+                         median = ~median(.x, na.rm = TRUE),
+                         sd = ~sd(.x, na.rm = TRUE),
+                         zeros = ~sum(.x == 0, na.rm = TRUE),
+                         pct_zeros = ~100 * sum(.x == 0, na.rm = TRUE) / sum(!is.na(.x))
+                       )),
+                n_observations = n(),
+                .groups = "drop")
+    
+    # Create a more readable format of regional outcomes
+    regional_outcomes_tidy <- regional_outcomes %>%
+      pivot_longer(cols = -c(all_of(location_var), n_observations),
+                   names_to = "metric", 
+                   values_to = "value") %>%
+      separate(metric, into = c("outcome", "statistic"), sep = "_(?=[^_]+$)") %>%
+      pivot_wider(names_from = "statistic", 
+                  values_from = "value") %>%
+      mutate(mean_sd = sprintf("%.2f (%.2f)", mean, sd)) %>%
+      select(all_of(location_var), outcome, n_observations, total, mean, median, sd, mean_sd, zeros, pct_zeros)
+  }
+  
+  # Test for regional differences in pollutants (ANOVA)
+  if (length(available_pollutants) > 0) {
+    regional_anova <- data.frame(
+      Pollutant = character(),
+      F_statistic = numeric(),
+      P_value = numeric(),
+      Significant = logical(),
+      stringsAsFactors = FALSE
+    )
+    
+    for (pollutant in available_pollutants) {
+      tryCatch({
+        anova_formula <- as.formula(paste0(pollutant, " ~ ", location_var))
+        model <- aov(anova_formula, data = data)
+        anova_result <- summary(model)[[1]]
+        
+        regional_anova <- rbind(regional_anova, data.frame(
+          Pollutant = pollutant,
+          F_statistic = anova_result$`F value`[1],
+          P_value = anova_result$`Pr(>F)`[1],
+          Significant = anova_result$`Pr(>F)`[1] < 0.05
+        ))
+      }, error = function(e) {
+        cat("Error in ANOVA for", pollutant, ":", conditionMessage(e), "\n")
+      })
+    }
+    
+    # Sort by significance and F-statistic
+    regional_anova <- regional_anova %>%
+      arrange(P_value, desc(F_statistic))
+  }
+  
+  # Weather variables by region
+  if (length(available_weather) > 0) {
+    regional_weather <- data %>%
+      group_by(across(all_of(location_var))) %>%
+      summarize(across(all_of(available_weather),
+                       list(
+                         mean = ~mean(.x, na.rm = TRUE),
+                         median = ~median(.x, na.rm = TRUE),
+                         sd = ~sd(.x, na.rm = TRUE)
+                       )),
+                n = n(),
+                .groups = "drop")
+    
+    # Create a more readable format of regional weather
+    regional_weather_tidy <- regional_weather %>%
+      pivot_longer(cols = -c(all_of(location_var), n),
+                   names_to = "metric", 
+                   values_to = "value") %>%
+      separate(metric, into = c("weather_var", "statistic"), sep = "_(?=[^_]+$)") %>%
+      pivot_wider(names_from = "statistic", 
+                  values_from = "value") %>%
+      mutate(mean_sd = sprintf("%.2f (%.2f)", mean, sd)) %>%
+      select(all_of(location_var), weather_var, n, mean, median, sd, mean_sd)
+  }
+  
+  # Temporal patterns by region
+  if ("date" %in% names(data) && is.Date(data$date)) {
+    # Create year and month variables if they don't exist
+    if (!"year" %in% names(data)) {
+      data$year <- year(data$date)
+    }
+    if (!"month" %in% names(data)) {
+      data$month <- month(data$date)
+    }
+    
+    # Look at regional trends over time for key pollutants
+    regional_time_trends <- NULL
+    if (length(available_pollutants) > 0) {
+      # Annual trends by region
+      regional_annual_trends <- data %>%
+        group_by(across(all_of(location_var)), year) %>%
+        summarize(across(all_of(available_pollutants),
+                         ~ mean(.x, na.rm = TRUE)),
+                  n = n(),
+                  .groups = "drop")
+      
+      # Seasonal trends by region
+      data$season <- case_when(
+        data$month %in% c(12, 1, 2) ~ "Winter",
+        data$month %in% c(3, 4, 5) ~ "Spring",
+        data$month %in% c(6, 7, 8) ~ "Summer",
+        data$month %in% c(9, 10, 11) ~ "Fall",
+        TRUE ~ NA_character_
+      )
+      
+      regional_seasonal_trends <- data %>%
+        group_by(across(all_of(location_var)), season) %>%
+        summarize(across(all_of(available_pollutants),
+                         ~ mean(.x, na.rm = TRUE)),
+                  n = n(),
+                  .groups = "drop")
+      
+      regional_time_trends <- list(
+        annual = regional_annual_trends,
+        seasonal = regional_seasonal_trends
+      )
+    }
+  }
+  
+  # Create regional summary object with all components
+  regional_summary <- list(
+    region_counts = region_counts,
+    regional_pollutants = if(exists("regional_pollutants")) regional_pollutants else NULL,
+    regional_pollutants_tidy = if(exists("regional_pollutants_tidy")) regional_pollutants_tidy else NULL,
+    regional_outcomes = if(exists("regional_outcomes")) regional_outcomes else NULL,
+    regional_outcomes_tidy = if(exists("regional_outcomes_tidy")) regional_outcomes_tidy else NULL,
+    regional_anova = if(exists("regional_anova")) regional_anova else NULL,
+    regional_weather = if(exists("regional_weather")) regional_weather else NULL,
+    regional_weather_tidy = if(exists("regional_weather_tidy")) regional_weather_tidy else NULL,
+    regional_time_trends = if(exists("regional_time_trends")) regional_time_trends else NULL
+  )
+}
+
+# Add this to your reporting section (after "Table 3: Regional Analysis") in the sink() output
+if (!is.null(results$regional)) {
+  cat("\n\nTable 3: Regional Analysis\n\n")
+  
+  # 3.1 Regional counts
+  if (!is.null(results$regional$region_counts)) {
+    cat("3.1 Regional Distribution of Observations\n\n")
+    print(kable(results$regional$region_counts, 
+                col.names = c("Location", "N", "% of Total"),
+                digits = c(0, 0, 1)))
+  }
+  
+  # 3.2 Pollutant levels by region
+  if (!is.null(results$regional$regional_pollutants_tidy)) {
+    cat("\n\n3.2 Pollutant Levels by Region\n\n")
+    # Group by pollutant for better readability
+    pollutants <- unique(results$regional$regional_pollutants_tidy$pollutant)
+    
+    for (poll in pollutants) {
+      cat("\nPollutant:", poll, "\n")
+      pollutant_data <- results$regional$regional_pollutants_tidy %>%
+        filter(pollutant == poll) %>%
+        select(-pollutant) %>%
+        arrange(desc(mean))
+      
+      print(kable(pollutant_data, 
+                  col.names = c("Location", "N", "Mean", "Median", "SD", "Mean (SD)"),
+                  digits = c(0, 0, 2, 2, 2, 0)))
+    }
+  }
+  
+  # 3.3 Health outcomes by region
+  if (!is.null(results$regional$regional_outcomes_tidy)) {
+    cat("\n\n3.3 Health Outcomes by Region\n\n")
+    # Group by outcome for better readability
+    outcomes <- unique(results$regional$regional_outcomes_tidy$outcome)
+    
+    for (out in outcomes) {
+      cat("\nOutcome:", out, "\n")
+      outcome_data <- results$regional$regional_outcomes_tidy %>%
+        filter(outcome == out) %>%
+        select(-outcome) %>%
+        arrange(desc(total))
+      
+      print(kable(outcome_data, 
+                  col.names = c("Location", "N", "Total", "Mean", "Median", "SD", 
+                                "Mean (SD)", "Zero Days", "% Zero Days"),
+                  digits = c(0, 0, 0, 2, 2, 2, 0, 0, 1)))
+    }
+  }
+  
+  # 3.4 Regional ANOVA results
+  if (!is.null(results$regional$regional_anova)) {
+    cat("\n\n3.4 Tests for Regional Differences in Pollutants (ANOVA)\n\n")
+    anova_data <- results$regional$regional_anova %>%
+      mutate(
+        P_value = sprintf("%.4f", P_value),
+        F_statistic = sprintf("%.2f", F_statistic),
+        Significant = ifelse(Significant, "Yes", "No")
+      )
+    
+    print(kable(anova_data,
+                col.names = c("Pollutant", "F-statistic", "p-value", "Significant at α=0.05")))
+    
+    cat("\nNote: Significant regional differences indicate spatial heterogeneity in pollution levels.\n")
+  }
+  
+  # 3.5 Weather variables by region
+  if (!is.null(results$regional$regional_weather_tidy)) {
+    cat("\n\n3.5 Weather Variables by Region\n\n")
+    # Group by weather variable for better readability
+    weather_vars <- unique(results$regional$regional_weather_tidy$weather_var)
+    
+    for (wvar in weather_vars) {
+      cat("\nWeather Variable:", wvar, "\n")
+      weather_data <- results$regional$regional_weather_tidy %>%
+        filter(weather_var == wvar) %>%
+        select(-weather_var) %>%
+        arrange(desc(mean))
+      
+      print(kable(weather_data, 
+                  col.names = c("Location", "N", "Mean", "Median", "SD", "Mean (SD)"),
+                  digits = c(0, 0, 2, 2, 2, 0)))
+    }
+  }
+  
+  # 3.6 Regional time trends
+  if (!is.null(results$regional$regional_time_trends)) {
+    cat("\n\n3.6 Temporal Patterns by Region\n\n")
+    
+    if (!is.null(results$regional$regional_time_trends$seasonal)) {
+      cat("Seasonal patterns: Key pollutant levels by region and season\n\n")
+      # We'll show the first pollutant as an example
+      if (length(available_pollutants) > 0) {
+        first_pollutant <- available_pollutants[1]
+        seasonal_pattern <- results$regional$regional_time_trends$seasonal %>%
+          select(all_of(c(location_var, "season", first_pollutant, "n")))
+        
+        print(kable(seasonal_pattern, 
+                    col.names = c("Location", "Season", first_pollutant, "N"),
+                    digits = c(0, 0, 2, 0)))
+        
+        cat("\nNote: Showed seasonal patterns for", first_pollutant, 
+            ". Other pollutants available in full results.\n")
+      }
+    }
+  }
+}
+
+# Add this to create regional plots
+# Add this to your plot generation section
+# Regional comparison plots
+if (any(c("LOCATION", "LOCATION_clean") %in% names(merged_daily))) {
+  location_var <- ifelse("LOCATION_clean" %in% names(merged_daily), "LOCATION_clean", "LOCATION")
+  
+  # Check if there are multiple locations
+  n_locations <- length(unique(merged_daily[[location_var]]))
+  
+  if (n_locations > 1) {
+    # Boxplots of pollutants by region
+    for (pollutant in pollutants) {
+      tryCatch({
+        # Get original variable name
+        orig_var <- pollutant
+        
+        # Create boxplot
+        p <- ggplot(merged_daily, aes_string(x = location_var, y = orig_var, fill = location_var)) +
+          geom_boxplot(alpha = 0.7) +
+          labs(title = paste("Distribution of", pollutant, "by Region"),
+               x = "Region",
+               y = pollutant) +
+          theme_minimal() +
+          theme(axis.text.x = element_text(angle = 45, hjust = 1),
+                legend.position = "none")
+        
+        ggsave(paste0("Output/Plots/", pollutant, "_by_region.png"), p, width = 10, height = 6)
+      }, error = function(e) {
+        cat("Error creating regional boxplot for", pollutant, ":", conditionMessage(e), "\n")
+      })
+    }
+    
+    # Time series of pollutants by region
+    if ("date" %in% names(merged_daily) && is.Date(merged_daily$date)) {
+      # Create monthly averages for time series
+      monthly_data <- merged_daily %>%
+        mutate(year_month = format(date, "%Y-%m")) %>%
+        group_by(year_month, .data[[location_var]]) %>%
+        summarize(across(all_of(pollutants), ~ mean(.x, na.rm = TRUE)),
+                  n = n(),
+                  .groups = "drop") %>%
+        mutate(date = as.Date(paste0(year_month, "-01")))
+      
+      # Plot time series for each pollutant
+      for (pollutant in pollutants) {
+        tryCatch({
+          p <- ggplot(monthly_data, aes_string(x = "date", y = pollutant, color = location_var, group = location_var)) +
+            geom_line() +
+            geom_point(size = 1) +
+            labs(title = paste("Monthly Average", pollutant, "by Region"),
+                 x = "Date",
+                 y = pollutant,
+                 color = "Region") +
+            theme_minimal() +
+            theme(axis.text.x = element_text(angle = 45, hjust = 1))
+          
+          ggsave(paste0("Output/Plots/", pollutant, "_time_series_by_region.png"), p, width = 12, height = 6)
+        }, error = function(e) {
+          cat("Error creating regional time series for", pollutant, ":", conditionMessage(e), "\n")
+        })
+      }
+    }
+    
+    # Health outcomes by region
+    death_vars <- intersect(c("deaths"), names(merged_daily))
+    if (length(death_vars) > 0) {
+      for (death_var in death_vars) {
+        tryCatch({
+          # Boxplot of death counts by region
+          p <- ggplot(merged_daily, aes_string(x = location_var, y = death_var, fill = location_var)) +
+            geom_boxplot(alpha = 0.7) +
+            labs(title = "Distribution of Death Counts by Region",
+                 x = "Region",
+                 y = "Deaths") +
+            theme_minimal() +
+            theme(axis.text.x = element_text(angle = 45, hjust = 1),
+                  legend.position = "none")
+          
+          ggsave(paste0("Output/Plots/deaths_by_region.png"), p, width = 10, height = 6)
+          
+          # If date exists, create time series
+          if ("date" %in% names(merged_daily) && is.Date(merged_daily$date)) {
+            # Create monthly sums for deaths
+            monthly_deaths <- merged_daily %>%
+              mutate(year_month = format(date, "%Y-%m")) %>%
+              group_by(year_month, .data[[location_var]]) %>%
+              summarize(deaths = sum(get(death_var), na.rm = TRUE),
+                        n = n(),
+                        .groups = "drop") %>%
+              mutate(date = as.Date(paste0(year_month, "-01")))
+            
+            p <- ggplot(monthly_deaths, aes_string(x = "date", y = "deaths", color = location_var, group = location_var)) +
+              geom_line() +
+              geom_point(size = 1) +
+              labs(title = "Monthly Deaths by Region",
+                   x = "Date",
+                   y = "Total Deaths",
+                   color = "Region") +
+              theme_minimal() +
+              theme(axis.text.x = element_text(angle = 45, hjust = 1))
+            
+            ggsave(paste0("Output/Plots/deaths_time_series_by_region.png"), p, width = 12, height = 6)
+          }
+        }, error = function(e) {
+          cat("Error creating regional death plots:", conditionMessage(e), "\n")
+        })
+      }
+    }
+    
+    # Create a heatmap for regional differences
+    if (length(pollutants) > 0 && n_locations > 1) {
+      tryCatch({
+        # Calculate z-scores for each pollutant by region
+        regional_z_scores <- merged_daily %>%
+          group_by(.data[[location_var]]) %>%
+          summarize(across(all_of(pollutants), 
+                           ~ mean(.x, na.rm = TRUE)),
+                    .groups = "drop")
+        
+        # Convert to long format for heatmap
+        regional_z_long <- regional_z_scores %>%
+          pivot_longer(cols = all_of(pollutants),
+                       names_to = "Pollutant",
+                       values_to = "Value")
+        
+        # Calculate z-scores within each pollutant
+        regional_z_long <- regional_z_long %>%
+          group_by(Pollutant) %>%
+          mutate(Z_Score = (Value - mean(Value)) / sd(Value)) %>%
+          ungroup()
+        
+        # Create heatmap
+        p <- ggplot(regional_z_long, 
+                    aes_string(x = "Pollutant", 
+                               y = location_var, 
+                               fill = "Z_Score")) +
+          geom_tile() +
+          scale_fill_gradient2(low = "blue", mid = "white", high = "red", 
+                               midpoint = 0, limits = c(-2, 2)) +
+          labs(title = "Regional Pollution Profiles",
+               subtitle = "Standardized z-scores (red = higher than average, blue = lower than average)",
+               x = "Pollutant",
+               y = "Region",
+               fill = "Z-Score") +
+          theme_minimal() +
+          theme(axis.text.x = element_text(angle = 45, hjust = 1))
+        
+        ggsave("Output/Plots/regional_pollution_heatmap.png", p, width = 10, height = 8)
+      }, error = function(e) {
+        cat("Error creating regional heatmap:", conditionMessage(e), "\n")
+      })
+    }
+  }
+}
