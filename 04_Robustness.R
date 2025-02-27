@@ -1,3 +1,5 @@
+#---------- ROBUSTNESS CHECKS ----------#
+
 print("Loading packages...")
 packages <- c("ggplot2", "dplyr", "tidyr", "AER", "viridis", "gridExtra", 
               "ggridges", "cowplot", "boot", "sandwich", "lmtest", 
@@ -63,8 +65,199 @@ pollutants <- c("PM10AVG",
                 "NOX_ugm3", 
                 "SO2_ugm3")
 
+run_robustness_checks_all_pollutants <- function(data, pollutants) {
+  # Create empty results dataframe
+  all_results <- data.frame(
+    Pollutant = character(),
+    Specification = character(),
+    Coefficient = numeric(),
+    SE = numeric(),
+    P_value = numeric(),
+    CI_Lower = numeric(),
+    CI_Upper = numeric(),
+    N = integer()
+  )
+  
+  # Process each pollutant
+  for (pollutant in pollutants) {
+    cat("\nRunning robustness checks for", pollutant, "\n")
+    
+    # Different specifications
+    specifications <- list(
+      # Base model
+      Base = list(
+        first_stage = paste0(
+          pollutant, " ~ total_frp + FRP_u_wind + FRP_v_wind + ",
+          "RELATIVEHUMIDITYAVG + AmbientTemperatureAVG + ",
+          "factor(month) + factor(year)"
+        ),
+        second_stage = "deaths ~ predicted + residuals + RELATIVEHUMIDITYAVG + AmbientTemperatureAVG + factor(month) + factor(year)"
+      ),
+      
+      # Extended model with additional weather controls
+      Extended = list(
+        first_stage = paste0(
+          pollutant, " ~ total_frp + FRP_u_wind + FRP_v_wind + ",
+          "RELATIVEHUMIDITYAVG + AmbientTemperatureAVG + ",
+          "WINDSPEEDAVG + WINDDIRECTIONAVG + ",
+          "factor(month) + factor(year)"
+        ),
+        second_stage = "deaths ~ predicted + residuals + RELATIVEHUMIDITYAVG + AmbientTemperatureAVG + WINDSPEEDAVG + WINDDIRECTIONAVG + factor(month) + factor(year)"
+      ),
+      
+      # Non-linear model with squared term
+      Nonlinear = list(
+        first_stage = paste0(
+          pollutant, " ~ total_frp + I(total_frp^2) + FRP_u_wind + FRP_v_wind + ",
+          "RELATIVEHUMIDITYAVG + AmbientTemperatureAVG + ",
+          "factor(month) + factor(year)"
+        ),
+        second_stage = "deaths ~ predicted + I(predicted^2) + residuals + RELATIVEHUMIDITYAVG + AmbientTemperatureAVG + factor(month) + factor(year)"
+      )
+    )
+    
+    # Run each specification
+    for (spec_name in names(specifications)) {
+      spec <- specifications[[spec_name]]
+      
+      # Filter data appropriately for each specification
+      if (spec_name == "Extended") {
+        # For Extended model, include wind variables and filter out NAs
+        filtered_data <- data %>%
+          filter(!is.na(deaths), !is.na(!!sym(pollutant)),
+                 !is.na(total_frp), !is.na(FRP_u_wind), !is.na(FRP_v_wind),
+                 !is.na(RELATIVEHUMIDITYAVG), !is.na(AmbientTemperatureAVG),
+                 !is.na(WINDSPEEDAVG), !is.na(WINDDIRECTIONAVG))
+      } else {
+        # For other models, just basic filtering
+        filtered_data <- data %>%
+          filter(!is.na(deaths), !is.na(!!sym(pollutant)),
+                 !is.na(total_frp), !is.na(FRP_u_wind), !is.na(FRP_v_wind),
+                 !is.na(RELATIVEHUMIDITYAVG), !is.na(AmbientTemperatureAVG))
+      }
+      
+      cat("  Specification:", spec_name, "- Observations:", nrow(filtered_data), "\n")
+      
+      # First stage
+      first_stage_model <- tryCatch({
+        lm(as.formula(spec$first_stage), data = filtered_data)
+      }, error = function(e) {
+        cat("  Error in first stage for", spec_name, ":", e$message, "\n")
+        return(NULL)
+      })
+      
+      if (is.null(first_stage_model)) next
+      
+      # Create predicted values and residuals
+      temp_data <- filtered_data
+      temp_data$predicted <- predict(first_stage_model)
+      temp_data$residuals <- residuals(first_stage_model)
+      
+      # Second stage
+      second_stage_model <- tryCatch({
+        glm(as.formula(spec$second_stage), 
+            family = poisson(link = "log"), 
+            data = temp_data)
+      }, error = function(e) {
+        cat("  Error in second stage for", spec_name, ":", e$message, "\n")
+        return(NULL)
+      })
+      
+      if (is.null(second_stage_model)) next
+      
+      # Calculate Newey-West standard errors
+      nw_vcov <- NeweyWest(second_stage_model, lag = 4, prewhite = FALSE)
+      robust_results <- coeftest(second_stage_model, vcov = nw_vcov)
+      
+      # Extract coefficient for predicted pollutant
+      poll_index <- which(rownames(robust_results) == "predicted")
+      poll_coef <- robust_results[poll_index, "Estimate"]
+      poll_se <- robust_results[poll_index, "Std. Error"]
+      poll_p <- robust_results[poll_index, "Pr(>|z|)"]
+      
+      # Calculate confidence intervals
+      ci_lower <- poll_coef - 1.96 * poll_se
+      ci_upper <- poll_coef + 1.96 * poll_se
+      
+      # Add to results
+      all_results <- rbind(all_results, data.frame(
+        Pollutant = pollutant,
+        Specification = spec_name,
+        Coefficient = poll_coef,
+        SE = poll_se,
+        P_value = poll_p,
+        CI_Lower = ci_lower,
+        CI_Upper = ci_upper,
+        N = nobs(second_stage_model)
+      ))
+      
+      # For the non-linear model, also extract squared term
+      if (spec_name == "Nonlinear") {
+        squared_index <- which(rownames(robust_results) == "I(predicted^2)")
+        if (length(squared_index) > 0) {
+          sq_coef <- robust_results[squared_index, "Estimate"]
+          sq_se <- robust_results[squared_index, "Std. Error"]
+          sq_p <- robust_results[squared_index, "Pr(>|z|)"]
+          
+          # Add squared term to results
+          all_results <- rbind(all_results, data.frame(
+            Pollutant = paste0(pollutant, "^2"),
+            Specification = "Nonlinear",
+            Coefficient = sq_coef,
+            SE = sq_se,
+            P_value = sq_p,
+            CI_Lower = sq_coef - 1.96 * sq_se,
+            CI_Upper = sq_coef + 1.96 * sq_se,
+            N = nobs(second_stage_model)
+          ))
+        }
+      }
+    }
+  }
+  
+  return(all_results)
+}
 
-#---------- ROBUSTNESS CHECKS ----------#
+# Run the analysis for all pollutants
+all_pollutants_results <- run_robustness_checks_all_pollutants(merged_daily, pollutants)
+
+# Format and print the results
+formatted_results <- all_pollutants_results %>%
+  mutate(
+    Coefficient = format(round(Coefficient, 5), nsmall = 5),
+    SE = format(round(SE, 5), nsmall = 5),
+    P_value = ifelse(P_value < 0.01, "<0.01",
+                     ifelse(P_value < 0.05, "<0.05",
+                            ifelse(P_value < 0.1, "<0.1",
+                                   format(round(P_value, 3), nsmall = 3)))),
+    CI = paste0("[", format(round(CI_Lower, 5), nsmall = 5), ", ", 
+                format(round(CI_Upper, 5), nsmall = 5), "]")
+  ) %>%
+  select(Pollutant, Specification, Coefficient, SE, P_value, CI, N)
+
+# Create a summary table that only shows significant results (p < 0.1)
+significant_results <- all_pollutants_results %>%
+  filter(P_value < 0.1) %>%
+  mutate(
+    Coefficient = format(round(Coefficient, 5), nsmall = 5),
+    SE = format(round(SE, 5), nsmall = 5),
+    P_value = ifelse(P_value < 0.01, "<0.01",
+                     ifelse(P_value < 0.05, "<0.05",
+                            ifelse(P_value < 0.1, "<0.1",
+                                   format(round(P_value, 3), nsmall = 3)))),
+    CI = paste0("[", format(round(CI_Lower, 5), nsmall = 5), ", ", 
+                format(round(CI_Upper, 5), nsmall = 5), "]")
+  ) %>%
+  select(Pollutant, Specification, Coefficient, SE, P_value, CI)
+
+# Print significant results
+if (nrow(significant_results) > 0) {
+  kable(significant_results, 
+        caption = "Significant Results (p < 0.1) for All Pollutants")
+} else {
+  cat("No significant results found at p < 0.1 level.\n")
+}
+
 
 # Create output directory
 output_dir <- "Output"
