@@ -215,6 +215,110 @@ print(kable(first_stage_table,
             caption = "First-Stage Diagnostics for All Pollutants",
             format = "markdown"))
 
+
+
+# Create a dataframe to store results
+instrument_test_results <- data.frame(
+  pollutant = character(),
+  t_statistic = numeric(),
+  t_pvalue = numeric(),
+  F_statistic = numeric(),
+  passes_10pct = logical(),
+  passes_15pct = logical(),
+  passes_20pct = logical(),
+  passes_25pct = logical(),
+  stringsAsFactors = FALSE
+)
+
+# Stock-Yogo critical values for single instrument
+stock_yogo_10pct <- 16.38
+stock_yogo_15pct <- 8.96
+stock_yogo_20pct <- 6.66
+stock_yogo_25pct <- 5.53
+
+# Loop through each pollutant
+for(pollutant in pollutants) {
+  # Create the formula for the first stage regression
+  formula_str <- paste(
+    pollutant, 
+    "~ total_frp + FRP_u_wind + FRP_v_wind + RELATIVEHUMIDITYAVG + AmbientTemperatureAVG + factor(year) + factor(month)"
+  )
+  first_stage_formula <- as.formula(formula_str)
+  
+  # Run the first stage regression
+  # Note: we're using merged_daily_no as a placeholder. Replace with appropriate dataset for each pollutant
+  # If you have different datasets for different pollutants, you'll need to modify this part
+  dataset_name <- paste0("merged_daily_", tolower(gsub("_ugm3|AVG", "", pollutant)))
+  
+  # This is where you might need to adjust depending on your actual data structure
+  # For demonstration, we'll assume merged_daily_no works for all
+  current_dataset <- get(ifelse(exists(dataset_name), dataset_name, "merged_daily_no"))
+  
+  # Try to run the model, with error handling in case of missing data
+  tryCatch({
+    first_stage_model <- lm(first_stage_formula, data = current_dataset)
+    first_stage_summary <- summary(first_stage_model)
+    
+    # Extract t-statistic for total_frp
+    total_frp_t <- first_stage_summary$coefficients["total_frp", "t value"]
+    total_frp_p <- first_stage_summary$coefficients["total_frp", "Pr(>|t|)"]
+    
+    # Calculate F-statistic
+    total_frp_f <- total_frp_t^2
+    
+    # Create restricted model without the instrument
+    restricted_formula_str <- gsub("total_frp \\+ ", "", formula_str)
+    restricted_model <- lm(as.formula(restricted_formula_str), data = current_dataset)
+    
+    # Perform ANOVA test
+    anova_result <- anova(restricted_model, first_stage_model)
+    instrument_f <- anova_result$F[2]
+    
+    # Store results
+    instrument_test_results <- rbind(
+      instrument_test_results,
+      data.frame(
+        pollutant = pollutant,
+        t_statistic = round(total_frp_t, 3),
+        t_pvalue = format(total_frp_p, scientific = TRUE, digits = 3),
+        F_statistic = round(instrument_f, 3),
+        passes_10pct = instrument_f > stock_yogo_10pct,
+        passes_15pct = instrument_f > stock_yogo_15pct,
+        passes_20pct = instrument_f > stock_yogo_20pct,
+        passes_25pct = instrument_f > stock_yogo_25pct,
+        stringsAsFactors = FALSE
+      )
+    )
+    
+    # Print progress
+    cat("Processed", pollutant, "- F-statistic:", round(instrument_f, 3), "\n")
+    
+  }, error = function(e) {
+    cat("Error processing", pollutant, ":", e$message, "\n")
+    
+    # Add row with NA values
+    instrument_test_results <<- rbind(
+      instrument_test_results,
+      data.frame(
+        pollutant = pollutant,
+        t_statistic = NA,
+        t_pvalue = NA,
+        F_statistic = NA,
+        passes_10pct = NA,
+        passes_15pct = NA,
+        passes_20pct = NA,
+        passes_25pct = NA,
+        stringsAsFactors = FALSE
+      )
+    )
+  })
+}
+
+write.csv(instrument_test_results, 
+          "Output/FS_diagnostics_one_only.csv", 
+          row.names = FALSE)
+
+
 #------------------------------------------------------------------------
 # AUTOCORRELATION TEST AND CUMBY-HUIZINGA IMPLEMENTATION
 #------------------------------------------------------------------------
@@ -529,3 +633,4 @@ formatted_table <- falsification_results %>%
   select(Pollutant, Coefficient, SE, P_value, CI, N)
 
 print(formatted_table)
+
