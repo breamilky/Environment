@@ -60,6 +60,7 @@ source("00_Bridge_RDS.R")               # RDS filename bridge            <1 min
 source("0202_second.R")                 # Tables 7-10, A3-A6 (PM2.5)     ~60 min
 source("01_Feb2_4_PM10.R")              # PM10 columns                   ~30 min
 source("01_Feb2_3.R")                   # Figure 1, Figure A1            ~20 min
+source("96_Pairs_Bootstrap.R")          # Table A2 row 1 (PRIMARY SE)
 
 #-------------------------------------------------------------------------------
 # STAGE 3 - Gap scripts   (read the merged CSV only; safe to run in a
