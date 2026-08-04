@@ -222,4 +222,3 @@ merged_daily <- dt_common %>%
 print("Merge performed successfully!")
 
 write.csv(merged_daily, 'Data/Mid_process_data/merged_death_data_from_script_01.csv')
-
