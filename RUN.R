@@ -45,6 +45,14 @@
 t_start <- Sys.time()
 cat("Pipeline started:", format(t_start), "\n\n")
 
+for (p in c("Output", "Output/RDS_files", "Output/Figures", "Output/Maps",
+            "Output/Tables", "Output/tables", "Output/Robustness/Tables",
+            "Output/PM10_Robustness/Tables", "Output/DoseResponse",
+            "Output/EventStudy", "Output/Counterfactual",
+            "Data/Mid_process_data")) {
+  dir.create(p, recursive = TRUE, showWarnings = FALSE)
+}
+
 #-------------------------------------------------------------------------------
 # STAGE 1 - Data
 #-------------------------------------------------------------------------------
