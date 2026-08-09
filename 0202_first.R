@@ -708,7 +708,7 @@ cat("SECTION 7: Control Function IV Estimation (CORRECTED BOOTSTRAP)\n")
 cat("═══════════════════════════════════════════════════════════════════════════\n\n")
 
 run_control_function_iv <- function(data, pollutant, compute_bootstrap = TRUE,
-                                    n_boot = 1000, block_sizes = c(30, 60, 90)) {
+                                    n_boot = 500, block_sizes = c(30, 60, 90)) {
   
   cat("Running Control Function IV for", pollutant, "...\n")
   
@@ -1159,7 +1159,7 @@ results_pm25 <- run_control_function_iv(
   merged_daily_pm2.5, 
   "PM2.5AVG", 
   compute_bootstrap = TRUE,
-  n_boot = 1000,
+  n_boot = 500,
   block_sizes = c(30, 60, 90)
 )
 
@@ -1168,7 +1168,7 @@ results_pm10 <- run_control_function_iv(
   merged_daily_pm10, 
   "PM10AVG", 
   compute_bootstrap = TRUE,
-  n_boot = 1000,
+  n_boot = 500,
   block_sizes = c(30, 60, 90)
 )
 
