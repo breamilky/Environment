@@ -7,7 +7,7 @@
 #     deaths, 10.0% fire share, RM 192.6m). The revised_ version rebuilds the
 #     instrument from WINDSPEEDAVG, lands on gamma_u = 1.88e-04 instead of
 #     2.26e-04, and gives 94 deaths instead of 128.
-#   - 96_Pairs_Bootstrap.R REMOVED from the routine run. Table A2's primary SE
+#   - 96_Pairs_Bootstrap.R. Table A2's primary SE
 #     is confirmed (0.003676 vs published 0.00368). Keep the script for the
 #     replication archive; re-run at n_boot = 500 only if you want the
 #     tighter figure.
