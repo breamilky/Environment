@@ -47,7 +47,7 @@ if (!dir.exists("Output")) dir.create("Output", recursive = TRUE)
 # CONFIGURATION
 #===============================================================================
 
-N_BOOT     <- 10     # Table A2's note says 500; its header says n=1000.
+N_BOOT     <- 500     # Table A2's note says 500; its header says n=1000.
 # Pick one and make the manuscript agree - see note at end.
 TRUNC_MULT <- 3       # reject draws beyond this multiple of the point estimate
 N_CORES    <- 1       # >1 uses parallel::mclapply (Mac/Linux only)
