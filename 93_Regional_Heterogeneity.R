@@ -139,7 +139,7 @@ for (poll in c("PM10AVG", "PM2.5AVG")) {
   }
   
   reg <- do.call(rbind, rows)
-
+  
   # An empty result should report itself, not crash at the arrange() below.
   if (is.null(reg) || nrow(reg) == 0) {
     cat("\n  No stations estimated for", poll, "\n")
@@ -246,6 +246,7 @@ if (is.null(pm10) || nrow(pm10) == 0) {
   }
 }
 
+
 cat("\n*** ARITHMETIC PROBLEM IN THE CURRENT TEXT ***\n")
 cat("Section 5.3 says Kedah stations are '350-380% above the national\n")
 cat("average', citing PM10 coefficients of 0.0506-0.0508 against 0.0141.\n")
@@ -267,5 +268,3 @@ cat("honest framing is a correlation between latitude and effect size across\n")
 cat("all 45, not four hand-picked stations.\n")
 
 cat("\nGap 3 complete.\n")
-
-
