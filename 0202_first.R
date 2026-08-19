@@ -6940,7 +6940,7 @@ cat("  95% CI: [", round(ci_lower_delta, 0), ", ", round(ci_upper_delta, 0), "]\
 # Method B: Bootstrap (accounts for first-stage uncertainty)
 # -----------------------------------------------------------------------------
 
-RUN_BOOTSTRAP <- TRUE  # Set TRUE for publication
+RUN_BOOTSTRAP <- FALSE  # Set TRUE for publication
 N_BOOT <- 1000
 
 if (RUN_BOOTSTRAP) {
