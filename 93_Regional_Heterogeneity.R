@@ -207,9 +207,15 @@ for (poll in c("PM10AVG", "PM2.5AVG")) {
 #===============================================================================
 
 out <- do.call(rbind, regional_all)
-rownames(out) <- NULL
-write.csv(out, "Output/Gap3_regional_heterogeneity.csv", row.names = FALSE)
-cat("Saved: Output/Gap3_regional_heterogeneity.csv\n")
+
+if (is.null(out) || nrow(out) == 0) {
+  cat("\nNo station estimates for either pollutant - nothing written.\n")
+  cat("Lower MIN_OBS and MIN_DEATHS at lines 42-43 and re-run.\n")
+} else {
+  rownames(out) <- NULL
+  write.csv(out, "Output/Gap3_regional_heterogeneity.csv", row.names = FALSE)
+  cat("Saved: Output/Gap3_regional_heterogeneity.csv\n")
+}
 
 #===============================================================================
 # RECONCILIATION WITH SECTION 5.3 - READ THIS
@@ -240,20 +246,6 @@ if (is.null(pm10) || nrow(pm10) == 0) {
   }
 }
 
-cat("\nStations named in Section 5.3 (matched case-insensitively):\n")
-for (t in targets) {
-  hit <- pm10[grepl(t, tolower(pm10$Station), fixed = TRUE), ]
-  if (nrow(hit) == 0) {
-    cat(sprintf("  %-16s NOT FOUND under this name in LOCATION_clean\n", t))
-  } else {
-    for (i in seq_len(nrow(hit))) {
-      cat(sprintf("  %-16s beta = %.5f | %.0f%% OF national | %+.0f%% ABOVE national\n",
-                  hit$Station[i], hit$Coefficient[i],
-                  hit$Pct_OF_national[i], hit$Pct_ABOVE_national[i]))
-    }
-  }
-}
-
 cat("\n*** ARITHMETIC PROBLEM IN THE CURRENT TEXT ***\n")
 cat("Section 5.3 says Kedah stations are '350-380% above the national\n")
 cat("average', citing PM10 coefficients of 0.0506-0.0508 against 0.0141.\n")
@@ -275,7 +267,5 @@ cat("honest framing is a correlation between latitude and effect size across\n")
 cat("all 45, not four hand-picked stations.\n")
 
 cat("\nGap 3 complete.\n")
-
-
 
 
