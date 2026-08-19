@@ -139,6 +139,15 @@ for (poll in c("PM10AVG", "PM2.5AVG")) {
   }
   
   reg <- do.call(rbind, rows)
+
+  # An empty result should report itself, not crash at the arrange() below.
+  if (is.null(reg) || nrow(reg) == 0) {
+    cat("\n  No stations estimated for", poll, "\n")
+    cat("  Thresholds: MIN_OBS =", MIN_OBS, ", MIN_DEATHS =", MIN_DEATHS, "\n")
+    cat("  On a subsample, lower these at lines 42-43 (try 30 and 3).\n\n")
+    next
+  }
+  
   rownames(reg) <- NULL
   regional_all[[poll]] <- reg
   
@@ -212,6 +221,24 @@ cat("===============================================================\n")
 
 pm10 <- regional_all[["PM10AVG"]]
 targets <- c("alor setar", "sungai petani", "pegoh ipoh", "batu muda")
+
+if (is.null(pm10) || nrow(pm10) == 0) {
+  cat("\nNo PM10 station estimates were produced - skipping the station lookup.\n")
+} else {
+  cat("\nStations named in Section 5.3 (matched case-insensitively):\n")
+  for (t in targets) {
+    hit <- pm10[grepl(t, tolower(pm10$Station), fixed = TRUE), ]
+    if (nrow(hit) == 0) {
+      cat(sprintf("  %-16s NOT FOUND under this name in LOCATION_clean\n", t))
+    } else {
+      for (i in seq_len(nrow(hit))) {
+        cat(sprintf("  %-16s beta = %.5f | %.0f%% OF national | %+.0f%% ABOVE national\n",
+                    hit$Station[i], hit$Coefficient[i],
+                    hit$Pct_OF_national[i], hit$Pct_ABOVE_national[i]))
+      }
+    }
+  }
+}
 
 cat("\nStations named in Section 5.3 (matched case-insensitively):\n")
 for (t in targets) {
