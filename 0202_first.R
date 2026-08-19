@@ -1158,7 +1158,7 @@ cat("Running IV estimation for PM2.5...\n\n")
 results_pm25 <- run_control_function_iv(
   merged_daily_pm2.5, 
   "PM2.5AVG", 
-  compute_bootstrap = TRUE,
+  compute_bootstrap = FALSE,
   n_boot = 500,
   block_sizes = c(30, 60, 90)
 )
@@ -1167,7 +1167,7 @@ cat("\nRunning IV estimation for PM10...\n\n")
 results_pm10 <- run_control_function_iv(
   merged_daily_pm10, 
   "PM10AVG", 
-  compute_bootstrap = TRUE,
+  compute_bootstrap = FALSE,
   n_boot = 500,
   block_sizes = c(30, 60, 90)
 )
@@ -6940,7 +6940,7 @@ cat("  95% CI: [", round(ci_lower_delta, 0), ", ", round(ci_upper_delta, 0), "]\
 # Method B: Bootstrap (accounts for first-stage uncertainty)
 # -----------------------------------------------------------------------------
 
-RUN_BOOTSTRAP <- FALSE  # Set TRUE for publication
+RUN_BOOTSTRAP <- TRUE  # Set TRUE for publication
 N_BOOT <- 1000
 
 if (RUN_BOOTSTRAP) {
